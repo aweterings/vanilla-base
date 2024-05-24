@@ -1,6 +1,7 @@
-ARG FEDORA_MAJOR_VERSION=40
+ARG FEDORA_MAJOR_VERSION=39
 
-FROM quay.io/fedora/fedora-silverblue:${FEDORA_MAJOR_VERSION}
+## FROM quay.io/fedora/fedora-silverblue:${FEDORA_MAJOR_VERSION}
+FROM quay.io/fedora-ostree-desktops/silverblue:${FEDORA_MAJOR_VERSION}
 
 COPY rootfs/ /
 COPY cosign.pub /etc/pki/containers/
