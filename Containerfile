@@ -1,59 +1,37 @@
-## 1. BUILD ARGS
-# These allow changing the produced image by passing different build args to adjust
-# the source from which your image is built.
-# Build args can be provided on the commandline when building locally with:
-#   podman build -f Containerfile --build-arg FEDORA_VERSION=40 -t local-image
+ARG FEDORA_MAJOR_VERSION=40
 
-# SOURCE_IMAGE arg can be anything from ublue upstream which matches your desired version:
-# See list here: https://github.com/orgs/ublue-os/packages?repo_name=main
-# - "silverblue"
-# - "kinoite"
-# - "sericea"
-# - "onyx"
-# - "lazurite"
-# - "vauxite"
-# - "base"
-#
-#  "aurora", "bazzite", "bluefin" or "ucore" may also be used but have different suffixes.
-ARG SOURCE_IMAGE="silverblue"
+FROM quay.io/fedora/fedora-silverblue:${FEDORA_MAJOR_VERSION}
 
-## SOURCE_SUFFIX arg should include a hyphen and the appropriate suffix name
-# These examples all work for silverblue/kinoite/sericea/onyx/lazurite/vauxite/base
-# - "-main"
-# - "-nvidia"
-# - "-asus"
-# - "-asus-nvidia"
-# - "-surface"
-# - "-surface-nvidia"
-#
-# aurora, bazzite and bluefin each have unique suffixes. Please check the specific image.
-# ucore has the following possible suffixes
-# - stable
-# - stable-nvidia
-# - stable-zfs
-# - stable-nvidia-zfs
-# - (and the above with testing rather than stable)
-ARG SOURCE_SUFFIX="-main"
+COPY rootfs/ /
+COPY cosign.pub /etc/pki/containers/
 
-## SOURCE_TAG arg must be a version built for the specific image: eg, 39, 40, gts, latest
-ARG SOURCE_TAG="latest"
+RUN <<-EOT bash
+	set -eu
 
+	systemctl enable dconf-update.service
+	systemctl enable flatpak-add-flathub-repo.service
+	systemctl enable flatpak-replace-fedora-apps.service
+	systemctl enable flatpak-cleanup.timer
+	systemctl enable rpm-ostreed-automatic.timer
 
-### 2. SOURCE IMAGE
-## this is a standard Containerfile FROM using the build ARGs above to select the right upstream image
-FROM ghcr.io/ublue-os/${SOURCE_IMAGE}${SOURCE_SUFFIX}:${SOURCE_TAG}
+	sed -i 's/\.ext/.jxl/' /etc/dconf/db/local.d/01-background
 
+    rpm-ostree install \
+		https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+		https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+	rpm-ostree install rpmfusion-free-release rpmfusion-nonfree-release \
+		--uninstall rpmfusion-free-release \
+		--uninstall rpmfusion-nonfree-release
+    rpm-ostree install broadcom-wl
+	rpm-ostree install gnome-tweaks
+	rpm-ostree override remove \
+		gnome-classic-session \
+		gnome-classic-session-xsession \
+		gnome-shell-extension-apps-menu \
+		gnome-shell-extension-launch-new-instance \
+		gnome-shell-extension-places-menu \
+		gnome-shell-extension-window-list \
+		gnome-shell-extension-background-logo
 
-### 3. MODIFICATIONS
-## make modifications desired in your image and install packages by modifying the build.sh script
-## the following RUN directive does all the things required to run "build.sh" as recommended.
-
-COPY build.sh /tmp/build.sh
-
-RUN mkdir -p /var/lib/alternatives && \
-    /tmp/build.sh && \
-    ostree container commit
-## NOTES:
-# - /var/lib/alternatives is required to prevent failure with some RPM installs
-# - All RUN commands must end with ostree container commit
-#   see: https://coreos.github.io/rpm-ostree/container/#using-ostree-container-commit
+	rpm-ostree cleanup -m && ostree container commit
+EOT
